@@ -11,6 +11,8 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 {
     internal partial class SkinnableLighting : SkinnableSprite
     {
+        private bool childReady;
+
         private DrawableOsuJudgement? targetJudgement;
         private JudgementResult? targetResult;
 
@@ -21,8 +23,17 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 
         protected override void SkinChanged(ISkinSource skin)
         {
+            childReady = false;
             base.SkinChanged(skin);
             updateColour();
+        }
+
+        protected override bool RequiresChildrenUpdate => !childReady && base.RequiresChildrenUpdate;
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+            childReady = true;
         }
 
         /// <summary>

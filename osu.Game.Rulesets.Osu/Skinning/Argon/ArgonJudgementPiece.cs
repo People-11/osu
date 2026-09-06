@@ -2,9 +2,15 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
+using osu.Framework.Graphics.Primitives;
+using osu.Framework.Graphics.Rendering;
+using osu.Framework.Graphics.Shaders;
+using osu.Framework.Graphics.Shapes;
 using osu.Framework.Graphics.Sprites;
 using osu.Framework.Utils;
 using osu.Game.Graphics;
@@ -19,6 +25,20 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
     public partial class ArgonJudgementPiece : TextJudgementPiece, IAnimatableJudgement
     {
         private RingExplosion? ringExplosion;
+
+        private double animationStartTime;
+        private bool animationApplied;
+        private bool requireFullChildUpdate = true;
+        private bool animationFinished;
+
+        /// <summary>
+        /// The point after which this piece is fully transparent.
+        /// </summary>
+        /// <remarks>
+        /// Hit judgements retain a scale transform until 1800ms, but the whole piece has faded out by 800ms.
+        /// The remaining transform must not keep the pooled drawable in the update tree.
+        /// </remarks>
+        public double VisibleDuration => Result == HitResult.IgnoreMiss || Result == HitResult.LargeTickMiss ? 400 : 800;
 
         [Resolved]
         private OsuColour colours { get; set; } = null!;
@@ -62,60 +82,129 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
         /// </remarks>
         public virtual void PlayAnimation()
         {
+            animationStartTime = TransformStartTime;
+            animationApplied = true;
+            animationFinished = false;
+
+            ringExplosion?.PlayAnimation();
+            applyAnimationAt(animationStartTime);
+        }
+
+        public override bool UpdateSubTree()
+        {
+            if (animationApplied)
+                applyAnimationAt(Time.Current);
+
+            return base.UpdateSubTree();
+        }
+
+        protected override bool RequiresChildrenUpdate => requireFullChildUpdate && base.RequiresChildrenUpdate;
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+            requireFullChildUpdate = false;
+        }
+
+        private void applyAnimationAt(double time)
+        {
+            double elapsed = time - animationStartTime;
+
+            if (elapsed >= VisibleDuration)
+            {
+                if (animationFinished)
+                    return;
+
+                animationFinished = true;
+            }
+            else
+                animationFinished = false;
+
             if (Result == HitResult.IgnoreMiss || Result == HitResult.LargeTickMiss)
             {
-                this.RotateTo(-45);
-                this.ScaleTo(1.6f);
-                this.ScaleTo(1.2f, 100, Easing.In);
-
-                this.FadeOutFromOne(400);
+                Rotation = -45;
+                Scale = new Vector2(valueAt(elapsed, 1.6f, 1.2f, 100, Easing.In));
+                Position = Vector2.Zero;
+                Alpha = valueAt(elapsed, 1, 0, 400);
             }
             else if (Result.IsMiss())
             {
-                this.FadeOutFromOne(800);
+                float movement = easedProgress(elapsed, 800, Easing.InQuint);
 
-                this.ScaleTo(1.6f);
-                this.ScaleTo(1, 100, Easing.In);
-
-                this.MoveTo(Vector2.Zero);
-                this.MoveToOffset(new Vector2(0, 100), 800, Easing.InQuint);
-
-                this.RotateTo(0);
-                this.RotateTo(40, 800, Easing.InQuint);
+                Alpha = valueAt(elapsed, 1, 0, 800);
+                Scale = new Vector2(valueAt(elapsed, 1.6f, 1, 100, Easing.In));
+                Position = new Vector2(0, 100 * movement);
+                Rotation = 40 * movement;
             }
             else
             {
-                this.FadeOutFromOne(800);
+                Alpha = valueAt(elapsed, 1, 0, 800);
+                Scale = Vector2.One;
+                Position = Vector2.Zero;
+                Rotation = 0;
 
-                JudgementText
-                    .FadeInFromZero(300, Easing.OutQuint)
-                    .ScaleTo(Vector2.One)
-                    .ScaleTo(new Vector2(1.2f), 1800, Easing.OutQuint);
+                JudgementText.Alpha = easedProgress(elapsed, 300, Easing.OutQuint);
+                JudgementText.Scale = new Vector2(valueAt(elapsed, 1, 1.2f, 1800, Easing.OutQuint));
             }
 
-            ringExplosion?.PlayAnimation();
+            ringExplosion?.ApplyAnimationAt(elapsed);
         }
+
+        private static float valueAt(double elapsed, float start, float end, double duration, Easing easing = Easing.None) =>
+            start + (end - start) * easedProgress(elapsed, duration, easing);
+
+        private static float easedProgress(double elapsed, double duration, Easing easing) =>
+            (float)Interpolation.ApplyEasing(easing, Math.Clamp(elapsed / duration, 0, 1));
 
         public Drawable? GetAboveHitObjectsProxiedContent() => JudgementText.CreateProxy();
 
-        private partial class RingExplosion : CompositeDrawable
+        /// <summary>
+        /// The expanding ring burst played on a hit.
+        /// </summary>
+        /// <remarks>
+        /// Every ring is the same shape driven by one animation, so this is a single leaf drawable whose draw
+        /// node emits all the ring quads, rather than N child drawables each carrying their own pair of
+        /// transforms. On dense maps hundreds of these are alive at once, so that was thousands of drawables
+        /// and thousands of transform applications per frame.
+        /// </remarks>
+        private partial class RingExplosion : Drawable
         {
+            private const float thickness = 4;
+            private const float small_size = 9;
+            private const float large_size = 14;
+
             private readonly float travel = 52;
+            private readonly int countSmall;
+            private readonly int countLarge;
+
+            private IShader shader = null!;
+
+            private readonly List<(Vector2 direction, float distance, float size)> rings = new List<(Vector2, float, float)>();
+
+            private float progress;
+
+            /// <summary>
+            /// Outward travel of every ring, 0 to 1. Transformed by <see cref="PlayAnimation"/>.
+            /// </summary>
+            public float Progress
+            {
+                get => progress;
+                set
+                {
+                    if (progress == value)
+                        return;
+
+                    progress = value;
+                    Invalidate(Invalidation.DrawNode);
+                }
+            }
 
             public RingExplosion(HitResult result)
             {
-                const float thickness = 4;
-
-                const float small_size = 9;
-                const float large_size = 14;
-
                 Anchor = Anchor.Centre;
                 Origin = Anchor.Centre;
 
                 Blending = BlendingParameters.Additive;
-
-                int countSmall = 0;
-                int countLarge = 0;
 
                 switch (result)
                 {
@@ -137,34 +226,87 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
                         break;
                 }
 
-                for (int i = 0; i < countSmall; i++)
-                    AddInternal(new RingPiece(thickness) { Size = new Vector2(small_size) });
+                // Large enough to bound every ring at full travel so this is never culled. The parent
+                // auto-sizes and this drawable used to be zero-sized, so it must not contribute to that.
+                Size = new Vector2((travel + large_size) * 2);
+                BypassAutoSizeAxes = Axes.Both;
+            }
 
-                for (int i = 0; i < countLarge; i++)
-                    AddInternal(new RingPiece(thickness) { Size = new Vector2(large_size) });
+            [BackgroundDependencyLoader]
+            private void load(ShaderManager shaders)
+            {
+                shader = shaders.Load(VertexShaderDescriptor.TEXTURE_2, "FastRing");
             }
 
             public void PlayAnimation()
             {
-                foreach (var c in InternalChildren)
-                {
-                    const float start_position_ratio = 0.3f;
+                rings.Clear();
 
+                for (int i = 0; i < countSmall + countLarge; i++)
+                {
+                    // Note: the original fed a 0-360 value straight into Cos/Sin (i.e. as radians). That is
+                    // preserved here so the spread of directions is unchanged.
                     float direction = RNG.NextSingle(0, 360);
                     float distance = RNG.NextSingle(travel / 2, travel);
 
-                    c.MoveTo(new Vector2(
-                        MathF.Cos(direction) * distance * start_position_ratio,
-                        MathF.Sin(direction) * distance * start_position_ratio
-                    ));
-
-                    c.MoveTo(new Vector2(
-                        MathF.Cos(direction) * distance,
-                        MathF.Sin(direction) * distance
-                    ), 600, Easing.OutQuint);
+                    rings.Add((new Vector2(MathF.Cos(direction), MathF.Sin(direction)), distance,
+                        i < countSmall ? small_size : large_size));
                 }
 
-                this.FadeOutFromOne(1000, Easing.OutQuint);
+                Progress = 0;
+                Alpha = 1;
+            }
+
+            public void ApplyAnimationAt(double elapsed)
+            {
+                Progress = easedProgress(elapsed, 600, Easing.OutQuint);
+                Alpha = 1 - easedProgress(elapsed, 1000, Easing.OutQuint);
+            }
+
+            protected override DrawNode CreateDrawNode() => new RingExplosionDrawNode(this);
+
+            private class RingExplosionDrawNode : DrawNode
+            {
+                protected new RingExplosion Source => (RingExplosion)base.Source;
+
+                public RingExplosionDrawNode(RingExplosion source)
+                    : base(source)
+                {
+                }
+
+                private readonly List<(Quad quad, float size)> rings = new List<(Quad, float)>();
+
+                private IShader shader = null!;
+
+                public override void ApplyState()
+                {
+                    base.ApplyState();
+
+                    shader = Source.shader;
+
+                    rings.Clear();
+
+                    Vector2 centre = Source.DrawSize / 2;
+
+                    // Rings originally started at 30% of their travel and eased outwards to 100%.
+                    float travelled = 0.3f + 0.7f * Source.progress;
+
+                    foreach ((Vector2 direction, float distance, float size) in Source.rings)
+                    {
+                        Vector2 offset = direction * distance * travelled;
+
+                        var rect = new RectangleF(centre.X + offset.X - size / 2, centre.Y + offset.Y - size / 2, size, size);
+
+                        rings.Add((Source.ToScreenSpace(rect), size));
+                    }
+                }
+
+                protected override void Draw(IRenderer renderer)
+                {
+                    base.Draw(renderer);
+
+                    FastRing.DrawRings(renderer, shader, CollectionsMarshal.AsSpan(rings), thickness, DrawColourInfo.Colour);
+                }
             }
         }
     }

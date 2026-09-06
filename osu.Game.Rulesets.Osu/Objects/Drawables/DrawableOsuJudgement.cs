@@ -1,11 +1,14 @@
 ﻿// Copyright (c) ppy Pty Ltd <contact@ppy.sh>. Licensed under the MIT Licence.
 // See the LICENCE file in the repository root for full licence text.
 
+using System;
 using osu.Framework.Allocation;
 using osu.Framework.Graphics;
+using osu.Framework.Utils;
 using osu.Game.Configuration;
 using osu.Game.Rulesets.Judgements;
 using osu.Game.Rulesets.Objects.Drawables;
+using osu.Game.Rulesets.Osu.Skinning.Argon;
 using osu.Game.Rulesets.Scoring;
 using osuTK;
 using osuTK.Graphics;
@@ -22,6 +25,11 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
         private OsuConfigManager config { get; set; } = null!;
 
         private Vector2? screenSpacePosition;
+
+        private bool hitLightingEnabled;
+        private bool hitLightingAnimationApplied;
+        private bool hitLightingAnimationFinished;
+        private double hitLightingAnimationStartTime;
 
         [BackgroundDependencyLoader]
         private void load()
@@ -61,6 +69,10 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 
         protected override void PrepareForUse()
         {
+            hitLightingEnabled = false;
+            hitLightingAnimationApplied = false;
+            hitLightingAnimationFinished = false;
+
             base.PrepareForUse();
 
             Lighting.ResetAnimation();
@@ -68,25 +80,73 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 
             if (screenSpacePosition != null)
                 Position = Parent!.ToLocalSpace(screenSpacePosition.Value);
+
+            // Argon's text keeps scaling for 1800ms, but its parent is completely transparent after 800ms.
+            // Keeping hundreds of invisible judgements alive for that tail needlessly updates their whole
+            // skinnable/proxy hierarchy. Do not affect custom skins, and retain the longer independent hit
+            // lighting animation when enabled.
+            if (JudgementBody?.Drawable is ArgonJudgementPiece argonJudgement && Result != null)
+            {
+                double visibleEnd = Result.TimeAbsolute + argonJudgement.VisibleDuration;
+
+                if (hitLightingEnabled)
+                    visibleEnd = double.Max(visibleEnd, hitLightingAnimationStartTime + 1400);
+
+                LifetimeEnd = double.Min(LifetimeEnd, visibleEnd);
+            }
         }
 
         protected override void ApplyHitAnimations()
         {
-            bool hitLightingEnabled = config.Get<bool>(OsuSetting.HitLighting);
+            hitLightingEnabled = config.Get<bool>(OsuSetting.HitLighting);
 
             Lighting.Alpha = 0;
 
             if (hitLightingEnabled)
             {
                 // todo: this animation changes slightly based on new/old legacy skin versions.
-                Lighting.ScaleTo(0.8f).ScaleTo(1.2f, 600, Easing.Out);
-                Lighting.FadeIn(200).Then().Delay(200).FadeOut(1000);
+                hitLightingAnimationStartTime = TransformStartTime;
+                hitLightingAnimationApplied = true;
+                applyHitLightingAt(hitLightingAnimationStartTime);
 
                 // extend the lifetime to cover lighting fade
-                LifetimeEnd = Lighting.LatestTransformEndTime;
+                LifetimeEnd = hitLightingAnimationStartTime + 1400;
             }
 
             base.ApplyHitAnimations();
+        }
+
+        public override bool UpdateSubTree()
+        {
+            if (hitLightingAnimationApplied)
+                applyHitLightingAt(Time.Current);
+
+            return base.UpdateSubTree();
+        }
+
+        private void applyHitLightingAt(double time)
+        {
+            double elapsed = time - hitLightingAnimationStartTime;
+
+            if (elapsed >= 1400)
+            {
+                if (hitLightingAnimationFinished)
+                    return;
+
+                hitLightingAnimationFinished = true;
+            }
+            else
+                hitLightingAnimationFinished = false;
+
+            float scaleProgress = (float)Interpolation.ApplyEasing(Easing.Out, Math.Clamp(elapsed / 600, 0, 1));
+            Lighting.Scale = new Vector2(0.8f + 0.4f * scaleProgress);
+
+            if (elapsed < 200)
+                Lighting.Alpha = (float)Math.Clamp(elapsed / 200, 0, 1);
+            else if (elapsed <= 400)
+                Lighting.Alpha = 1;
+            else
+                Lighting.Alpha = (float)(1 - Math.Clamp((elapsed - 400) / 1000, 0, 1));
         }
 
         protected override Drawable CreateDefaultJudgement(HitResult result) =>

@@ -10,13 +10,18 @@ using osu.Framework.Extensions;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Graphics.Pooling;
+using osu.Framework.Graphics.Sprites;
 using osu.Framework.Testing;
+using osu.Framework.Timing;
+using osu.Framework.Utils;
 using osu.Game.Configuration;
 using osu.Game.Rulesets.Judgements;
 using osu.Game.Rulesets.Objects;
 using osu.Game.Rulesets.Osu.Objects.Drawables;
+using osu.Game.Rulesets.Osu.Skinning.Argon;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Skinning;
+using osuTK;
 
 namespace osu.Game.Rulesets.Osu.Tests
 {
@@ -56,6 +61,52 @@ namespace osu.Game.Rulesets.Osu.Tests
 
             AddUntilStep("judgements shown", () => this.ChildrenOfType<TestDrawableOsuJudgement>().Any());
             AddUntilStep("hit lighting shown", () => this.ChildrenOfType<TestDrawableOsuJudgement>().Any(judgement => judgement.Lighting.Alpha > 0));
+        }
+
+        [Test]
+        public void TestArgonAnimationAfterRewind()
+        {
+            ManualClock manualClock = null!;
+            Container clockedContainer = null!;
+            TestArgonJudgementPiece piece = null!;
+
+            AddStep("create judgement", () =>
+            {
+                manualClock = new ManualClock();
+
+                Add(clockedContainer = new Container
+                {
+                    Clock = new FramedClock(manualClock),
+                    Child = piece = new TestArgonJudgementPiece(HitResult.Great)
+                });
+            });
+
+            AddStep("start animation", () =>
+            {
+                using (piece.BeginAbsoluteSequence(1000))
+                    piece.PlayAnimation();
+            });
+
+            assertState(1100);
+            assertState(1400);
+            assertState(1100);
+
+            void assertState(double time)
+            {
+                AddAssert($"state at {time}", () =>
+                {
+                    manualClock.CurrentTime = time;
+                    clockedContainer.UpdateSubTree();
+
+                    double elapsed = time - 1000;
+                    float expectedTextProgress = (float)Interpolation.ApplyEasing(Easing.OutQuint, Math.Clamp(elapsed / 300, 0, 1));
+                    float expectedScaleProgress = (float)Interpolation.ApplyEasing(Easing.OutQuint, Math.Clamp(elapsed / 1800, 0, 1));
+
+                    return Precision.AlmostEquals(piece.Alpha, (float)(1 - elapsed / 800))
+                           && Precision.AlmostEquals(piece.Text.Alpha, expectedTextProgress)
+                           && Precision.AlmostEquals(piece.Text.Scale, new Vector2(1 + 0.2f * expectedScaleProgress));
+                });
+            }
         }
 
         private void showResult(HitResult result)
@@ -109,6 +160,16 @@ namespace osu.Game.Rulesets.Osu.Tests
         {
             public new SkinnableSprite Lighting => base.Lighting;
             public new SkinnableDrawable? JudgementBody => base.JudgementBody;
+        }
+
+        private partial class TestArgonJudgementPiece : ArgonJudgementPiece
+        {
+            public SpriteText Text => JudgementText;
+
+            public TestArgonJudgementPiece(HitResult result)
+                : base(result)
+            {
+            }
         }
     }
 }
