@@ -32,8 +32,10 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
         {
             InternalChildren = new Drawable[]
             {
-                connectionPool = new DrawablePool<FollowPointConnection>(10, 200),
-                pointPool = new DrawablePool<FollowPoint>(50, 1000)
+                // maximums were sized for conventional maps; dense/high-jump maps keep several thousand
+                // follow points alive at once, and anything past the maximum is constructed then discarded.
+                connectionPool = new DrawablePool<FollowPointConnection>(10, 1000),
+                pointPool = new DrawablePool<FollowPoint>(50, 8000)
             };
         }
 

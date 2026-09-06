@@ -35,7 +35,7 @@ namespace osu.Game.Rulesets.Osu.UI
         private readonly ProxyContainer spinnerProxies;
         private readonly JudgementContainer<DrawableOsuJudgement> judgementLayer;
 
-        private readonly JudgementPooler<DrawableOsuJudgement> judgementPooler;
+        private JudgementPooler<DrawableOsuJudgement> judgementPooler = null!;
 
         // For osu! gameplay, everything is always on screen.
         // Skipping masking calculations improves performance in intense beatmaps (ie. https://osu.ppy.sh/beatmapsets/150945#osu/372245)
@@ -74,18 +74,6 @@ namespace osu.Game.Rulesets.Osu.UI
             };
 
             HitPolicy = new StartTimeOrderedHitPolicy();
-
-            AddInternal(judgementPooler = new JudgementPooler<DrawableOsuJudgement>(new[]
-            {
-                HitResult.Great,
-                HitResult.Ok,
-                HitResult.Meh,
-                HitResult.Miss,
-                HitResult.LargeTickHit,
-                HitResult.SliderTailHit,
-                HitResult.LargeTickMiss,
-                HitResult.IgnoreMiss,
-            }, onJudgementLoaded));
 
             NewResult += onNewResult;
         }
@@ -138,7 +126,25 @@ namespace osu.Game.Rulesets.Osu.UI
 
             var osuBeatmap = (OsuBeatmap?)beatmap;
 
-            RegisterPool<HitCircle, DrawableHitCircle>(20, 100);
+            int greatJudgementPoolSize = osuBeatmap == null ? 20 : calculateGreatJudgementPoolSize(osuBeatmap);
+
+            // Dense autoplay maps can exhaust the default pool during gameplay. A replacement judgement must
+            // then load its skinnable hierarchy synchronously on the update thread (20ms in the captured log).
+            // Preload only the peak number of Great judgements this beatmap can keep alive, while the playfield
+            // itself is still loading asynchronously.
+            AddInternal(judgementPooler = new JudgementPooler<DrawableOsuJudgement>(new[]
+            {
+                HitResult.Great,
+                HitResult.Ok,
+                HitResult.Meh,
+                HitResult.Miss,
+                HitResult.LargeTickHit,
+                HitResult.SliderTailHit,
+                HitResult.LargeTickMiss,
+                HitResult.IgnoreMiss,
+            }, onJudgementLoaded, result => result == HitResult.Great ? greatJudgementPoolSize : 20));
+
+            RegisterPool<HitCircle, DrawableHitCircle>(20, 1000);
 
             // handle edge cases where a beatmap has a slider with many repeats.
             int maxRepeatsOnOneSlider = 0;
@@ -165,6 +171,26 @@ namespace osu.Game.Rulesets.Osu.UI
 
             if (beatmap != null)
                 ApplyCircleSizeToPlayfieldBorder(beatmap);
+        }
+
+        private static int calculateGreatJudgementPoolSize(OsuBeatmap beatmap)
+        {
+            // The unmodified default judgement can remain alive for 1800ms. Use end times because sliders are
+            // judged at their tail, and cap pathological input to the same bound as the hit-circle pool.
+            var judgementTimes = beatmap.HitObjects.Select(h => h.GetEndTime()).OrderBy(t => t).ToArray();
+
+            int first = 0;
+            int peak = 20;
+
+            for (int last = 0; last < judgementTimes.Length; last++)
+            {
+                while (judgementTimes[last] - judgementTimes[first] > 1800)
+                    first++;
+
+                peak = Math.Max(peak, last - first + 1);
+            }
+
+            return Math.Min(peak, 1000);
         }
 
         protected void ApplyCircleSizeToPlayfieldBorder(IBeatmap beatmap)

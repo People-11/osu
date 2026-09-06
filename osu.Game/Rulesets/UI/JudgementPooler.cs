@@ -23,11 +23,13 @@ namespace osu.Game.Rulesets.UI
 
         private readonly IEnumerable<HitResult> usableHitResults;
         private readonly Action<T>? onJudgementInitialLoad;
+        private readonly Func<HitResult, int>? initialPoolSize;
 
-        public JudgementPooler(IEnumerable<HitResult> usableHitResults, Action<T>? onJudgementInitialLoad = null)
+        public JudgementPooler(IEnumerable<HitResult> usableHitResults, Action<T>? onJudgementInitialLoad = null, Func<HitResult, int>? initialPoolSize = null)
         {
             this.usableHitResults = usableHitResults;
             this.onJudgementInitialLoad = onJudgementInitialLoad;
+            this.initialPoolSize = initialPoolSize;
         }
 
         public T? Get(HitResult result, Action<T>? setupAction)
@@ -43,7 +45,7 @@ namespace osu.Game.Rulesets.UI
         {
             foreach (HitResult result in usableHitResults)
             {
-                var pool = new DrawableJudgementPool(result, onJudgementInitialLoad);
+                var pool = new DrawableJudgementPool(result, onJudgementInitialLoad, initialPoolSize?.Invoke(result) ?? 20);
                 poolDictionary.Add(result, pool);
                 AddInternal(pool);
             }
@@ -54,8 +56,8 @@ namespace osu.Game.Rulesets.UI
             private readonly HitResult result;
             private readonly Action<T>? onLoaded;
 
-            public DrawableJudgementPool(HitResult result, Action<T>? onLoaded)
-                : base(20)
+            public DrawableJudgementPool(HitResult result, Action<T>? onLoaded, int initialSize)
+                : base(initialSize)
             {
                 this.result = result;
                 this.onLoaded = onLoaded;
