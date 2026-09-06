@@ -15,6 +15,9 @@ namespace osu.Game.Skinning
 {
     public partial class PausableSkinnableSound : SkinnableSound
     {
+        private ISampleInfo[] lastUpdatedSamples;
+        private bool childrenReady;
+
         public double Length => !DrawableSamples.Any() ? 0 : DrawableSamples.Max(sample => sample.Length);
 
         public bool RequestedPlaying { get; private set; }
@@ -68,6 +71,35 @@ namespace osu.Game.Skinning
                         base.Play();
                 });
             }
+        }
+
+        protected override void SkinChanged(ISkinSource skin)
+        {
+            childrenReady = false;
+            base.SkinChanged(skin);
+        }
+
+        protected override bool RequiresChildrenUpdate
+        {
+            get
+            {
+                if (!ReferenceEquals(lastUpdatedSamples, Samples))
+                {
+                    lastUpdatedSamples = Samples;
+                    childrenReady = false;
+                }
+
+                // Looping slider/spinner samples retain the normal live drawable path. One-shot hit samples
+                // only need their hierarchy updated when loading, replacing samples or changing skin; the
+                // SampleChannel continues playback independently on the audio thread.
+                return (Looping || !childrenReady) && base.RequiresChildrenUpdate;
+            }
+        }
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+            childrenReady = true;
         }
 
         public override void Play()

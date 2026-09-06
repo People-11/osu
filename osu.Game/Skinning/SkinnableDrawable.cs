@@ -2,7 +2,6 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
-using osu.Framework.Caching;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Animations;
 using osuTK;
@@ -62,8 +61,6 @@ namespace osu.Game.Skinning
 
         private readonly Func<ISkinComponentLookup, Drawable>? createDefault;
 
-        private readonly Cached scaling = new Cached();
-
         private bool isDefault;
 
         protected virtual Drawable CreateDefault(ISkinComponentLookup lookup) => createDefault?.Invoke(lookup) ?? Empty();
@@ -88,42 +85,23 @@ namespace osu.Game.Skinning
                 isDefault = false;
             }
 
-            scaling.Invalidate();
-
             if (CentreComponent)
             {
                 Drawable.Origin = Anchor.Centre;
                 Drawable.Anchor = Anchor.Centre;
             }
 
-            InternalChild = Drawable;
-        }
-
-        protected override void Update()
-        {
-            base.Update();
-
-            if (!scaling.IsValid)
+            // this only ever depends on the drawable just created above, so there is no reason to poll it
+            // from Update() on every one of the thousands of instances that can be alive at once.
+            if (confineMode == ConfineMode.ScaleToFit && (!isDefault || ApplySizeRestrictionsToDefault))
             {
-                try
-                {
-                    if (isDefault && !ApplySizeRestrictionsToDefault) return;
-
-                    switch (confineMode)
-                    {
-                        case ConfineMode.ScaleToFit:
-                            Drawable.RelativeSizeAxes = Axes.Both;
-                            Drawable.Size = Vector2.One;
-                            Drawable.Scale = Vector2.One;
-                            Drawable.FillMode = FillMode.Fit;
-                            break;
-                    }
-                }
-                finally
-                {
-                    scaling.Validate();
-                }
+                Drawable.RelativeSizeAxes = Axes.Both;
+                Drawable.Size = Vector2.One;
+                Drawable.Scale = Vector2.One;
+                Drawable.FillMode = FillMode.Fit;
             }
+
+            InternalChild = Drawable;
         }
     }
 
