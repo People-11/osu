@@ -146,6 +146,56 @@ namespace osu.Game.Rulesets.Osu.Tests
             assertDirections();
         }
 
+        [Test]
+        public void TestShortConnectionHasNoDrawable()
+        {
+            addObjectsStep(() => new OsuHitObject[]
+            {
+                new HitCircle { Position = new Vector2(100, 100) },
+                new HitCircle { Position = new Vector2(150, 100) },
+            });
+
+            AddAssert("all connection lifetimes collapsed", () => followPointRenderer.Entries.All(e => e.LifetimeStart == e.LifetimeEnd));
+            AddAssert("no alive empty connections", () => followPointRenderer.AliveEntries.Count == 0);
+        }
+
+        [Test]
+        public void TestFollowPointAnimationAfterRewind()
+        {
+            ManualClock manualClock = null;
+            Container clockedContainer = null;
+            FollowPoint point = null;
+
+            AddStep("create animated point", () =>
+            {
+                manualClock = new ManualClock();
+
+                Add(clockedContainer = new Container
+                {
+                    Clock = new FramedClock(manualClock),
+                    Child = point = new FollowPoint()
+                });
+
+                point.ApplyAnimation(Vector2.Zero, new Vector2(100, 0), new Vector2(1.5f), Vector2.One, 0, 1000, 1300, 200);
+            });
+
+            assertPointState(1050, 43.75f, 0.25f);
+            assertPointState(1350, 100, 0.75f);
+            assertPointState(1050, 43.75f, 0.25f);
+
+            void assertPointState(double time, float expectedX, float expectedAlpha)
+            {
+                AddAssert($"point state at {time}", () =>
+                {
+                    manualClock.CurrentTime = time;
+                    clockedContainer.UpdateSubTree();
+
+                    return Precision.AlmostEquals(point.X, expectedX)
+                           && Precision.AlmostEquals(point.Alpha, expectedAlpha);
+                });
+            }
+        }
+
         private void addMultipleObjectsStep() => addObjectsStep(() => new OsuHitObject[]
         {
             new HitCircle { Position = new Vector2(100, 100) },

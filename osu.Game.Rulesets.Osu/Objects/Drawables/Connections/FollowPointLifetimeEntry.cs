@@ -88,9 +88,18 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
             Vector2 startPosition = Start.StackedEndPosition;
             Vector2 endPosition = End.StackedPosition;
             Vector2 distanceVector = endPosition - startPosition;
+            float distance = distanceVector.Length;
+
+            // FollowPointConnection starts at 1.5 spacings and leaves one spacing before the target.
+            // Avoid creating and updating an empty pooled connection when those bounds cannot contain a point.
+            if ((int)distance <= FollowPointConnection.SPACING * 2.5f)
+            {
+                LifetimeEnd = LifetimeStart;
+                return;
+            }
 
             // The lifetime start will match the fade-in time of the first follow point.
-            float fraction = (int)(FollowPointConnection.SPACING * 1.5) / distanceVector.Length;
+            float fraction = (int)(FollowPointConnection.SPACING * 1.5) / distance;
             FollowPointConnection.GetFadeTimes(Start, End, fraction, out double fadeInTime, out _);
 
             LifetimeStart = fadeInTime;

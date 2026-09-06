@@ -2,11 +2,15 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using osu.Framework.Allocation;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Pooling;
 using osu.Game.Rulesets.Objects;
 using osu.Game.Rulesets.Objects.Pooling;
+using osu.Game.Rulesets.Osu.Skinning.Argon;
+using osu.Game.Skinning;
 using osuTK;
 
 namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
@@ -21,6 +25,24 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
         public const double PREEMPT = 800;
 
         public DrawablePool<FollowPoint>? Pool { private get; set; }
+
+        private readonly List<FollowPoint> points = new List<FollowPoint>();
+        private int aliveStart;
+        private int aliveEnd;
+        private double lastLifeCheckTime = double.NaN;
+        private bool lifetimesOrdered;
+        private volatile bool batchArgonUpdates;
+
+        private ISkinSource skinSource = null!;
+
+        [BackgroundDependencyLoader]
+        private void load(ISkinSource skinSource)
+        {
+            this.skinSource = skinSource;
+            skinSource.SourceChanged += onSkinChanged;
+        }
+
+        private void onSkinChanged() => batchArgonUpdates = false;
 
         protected override void OnApply(FollowPointLifetimeEntry entry)
         {
@@ -39,14 +61,14 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
 
             entry.Invalidated -= scheduleRefresh;
             // Return points to the pool.
-            ClearInternal(false);
+            clearPoints();
         }
 
         private void scheduleRefresh() => Scheduler.AddOnce(() =>
         {
             Debug.Assert(Pool != null);
 
-            ClearInternal(false);
+            clearPoints();
 
             var entry = Entry;
 
@@ -64,6 +86,8 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
             int distance = (int)distanceVector.Length;
             float rotation = (float)(Math.Atan2(distanceVector.Y, distanceVector.X) * (180 / Math.PI));
 
+            lifetimesOrdered = end.StartTime >= startTime;
+
             double finalTransformEndTime = startTime;
 
             for (int d = (int)(SPACING * 1.5); d < distance - SPACING; d += SPACING)
@@ -76,29 +100,155 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
 
                 FollowPoint fp;
 
-                AddInternal(fp = Pool.Get());
+                fp = Pool.Get();
 
-                fp.ClearTransforms();
-                fp.Position = pointStartPosition;
-                fp.Rotation = rotation;
-                fp.Alpha = 0;
-                fp.Scale = new Vector2(1.5f * end.Scale);
+                fp.ApplyAnimation(pointStartPosition, pointEndPosition, new Vector2(1.5f * end.Scale), new Vector2(end.Scale), rotation,
+                    fadeInTime, fadeOutTime, end.TimeFadeIn);
 
-                fp.AnimationStartTime.Value = fadeInTime;
+                points.Add(fp);
+                AddInternal(fp);
 
-                using (fp.BeginAbsoluteSequence(fadeInTime))
-                {
-                    fp.FadeIn(end.TimeFadeIn);
-                    fp.ScaleTo(end.Scale, end.TimeFadeIn, Easing.Out);
-                    fp.MoveTo(pointEndPosition, end.TimeFadeIn, Easing.Out);
-                    fp.Delay(fadeOutTime - fadeInTime).FadeOut(end.TimeFadeIn).Expire();
-
-                    finalTransformEndTime = fp.LifetimeEnd;
-                }
+                finalTransformEndTime = fp.LifetimeEnd;
             }
 
             entry.LifetimeEnd = finalTransformEndTime;
         });
+
+        private void clearPoints()
+        {
+            ClearInternal(false);
+            points.Clear();
+            aliveStart = aliveEnd = 0;
+            lastLifeCheckTime = double.NaN;
+            lifetimesOrdered = false;
+            batchArgonUpdates = false;
+        }
+
+        protected override bool RequiresChildrenUpdate => !batchArgonUpdates && base.RequiresChildrenUpdate;
+
+        protected override bool CheckChildrenLife()
+        {
+            if (!lifetimesOrdered || points.Count != InternalChildren.Count)
+            {
+                bool fallbackChanged = base.CheckChildrenLife();
+
+                if (batchArgonUpdates)
+                {
+                    double currentTime = Time.Current;
+
+                    for (int i = 0; i < AliveInternalChildren.Count; i++)
+                        ((FollowPoint)AliveInternalChildren[i]).ApplyAnimationAt(currentTime);
+                }
+
+                return fallbackChanged;
+            }
+
+            double time = Time.Current;
+            int newStart = aliveStart;
+            int newEnd = aliveEnd;
+
+            // Most frames remain between the same two lifetime boundaries. Preserve the binary-search path for
+            // rewinds/seeks and only skip it when the cached range is provably still current.
+            if (time < lastLifeCheckTime
+                || (newStart < points.Count && points[newStart].LifetimeEnd <= time)
+                || (newEnd < points.Count && points[newEnd].LifetimeStart <= time))
+            {
+                newStart = firstPointEndingAfter(time);
+                newEnd = firstPointStartingAfter(time);
+            }
+
+            lastLifeCheckTime = time;
+            bool changed = false;
+
+            for (int i = aliveStart; i < aliveEnd; i++)
+            {
+                if ((i < newStart || i >= newEnd) && points[i].IsAlive)
+                {
+                    MakeChildDead(points[i]);
+                    changed = true;
+                }
+            }
+
+            for (int i = newStart; i < newEnd; i++)
+            {
+                if ((i < aliveStart || i >= aliveEnd) && !points[i].IsAlive)
+                {
+                    MakeChildAlive(points[i]);
+                    changed = true;
+                }
+            }
+
+            aliveStart = newStart;
+            aliveEnd = newEnd;
+
+            if (batchArgonUpdates)
+            {
+                for (int i = newStart; i < newEnd; i++)
+                    points[i].ApplyAnimationAt(time);
+            }
+
+            return changed;
+        }
+
+        protected override void UpdateAfterChildren()
+        {
+            base.UpdateAfterChildren();
+
+            if (batchArgonUpdates || points.Count == 0)
+                return;
+
+            for (int i = 0; i < points.Count; i++)
+            {
+                if (points[i].Drawable is not ArgonFollowPoint { LoadState: LoadState.Loaded })
+                    return;
+            }
+
+            batchArgonUpdates = true;
+        }
+
+        private int firstPointEndingAfter(double time)
+        {
+            int low = 0;
+            int high = points.Count;
+
+            while (low < high)
+            {
+                int middle = (low + high) / 2;
+
+                if (points[middle].LifetimeEnd <= time)
+                    low = middle + 1;
+                else
+                    high = middle;
+            }
+
+            return low;
+        }
+
+        private int firstPointStartingAfter(double time)
+        {
+            int low = 0;
+            int high = points.Count;
+
+            while (low < high)
+            {
+                int middle = (low + high) / 2;
+
+                if (points[middle].LifetimeStart <= time)
+                    low = middle + 1;
+                else
+                    high = middle;
+            }
+
+            return low;
+        }
+
+        protected override void Dispose(bool isDisposing)
+        {
+            base.Dispose(isDisposing);
+
+            if (skinSource != null)
+                skinSource.SourceChanged -= onSkinChanged;
+        }
 
         /// <summary>
         /// Computes the fade time of follow point positioned between two hitobjects.
