@@ -13,4 +13,9 @@ namespace osu.Game.Rulesets.UI
     {
         ReplayInputHandler? ReplayInputHandler { get; set; }
     }
+
+    internal interface IReplayFrameProcessor
+    {
+        void ProcessReplayFrame();
+    }
 }

@@ -10,6 +10,7 @@ using osu.Framework.Development;
 using osu.Framework.Graphics;
 using osu.Framework.Graphics.Containers;
 using osu.Framework.Logging;
+using osu.Framework.Statistics;
 using osu.Framework.Timing;
 using osu.Game.Input.Handlers;
 using osu.Game.Screens.Play;
@@ -25,6 +26,8 @@ namespace osu.Game.Rulesets.UI
     public sealed partial class FrameStabilityContainer : Container, IHasReplayHandler, IFrameStableClock
     {
         public ReplayInputHandler? ReplayInputHandler { get; set; }
+
+        internal IReplayFrameProcessor? ReplayFrameProcessor { get; set; }
 
         private int invalidBassTimeLogCount;
 
@@ -68,6 +71,10 @@ namespace osu.Game.Rulesets.UI
 
         private readonly Stopwatch stopwatch = new Stopwatch();
 
+        private bool hasPresented;
+
+        private static readonly GlobalStatistic<int> same_time_replay_frames = GlobalStatistics.Get<int>("Frame stability", "Same-time replay frames");
+
         /// <summary>
         /// The current direction of playback to be exposed to frame stable children.
         /// </summary>
@@ -108,20 +115,50 @@ namespace osu.Game.Rulesets.UI
         {
             stopwatch.Restart();
 
+            bool presentationIsCurrent = false;
+            int batchedFrames = 0;
+
             do
             {
                 // update clock is always trying to approach the aim time.
                 // it should be provided as the original value each loop.
+                double previousTime = manualClock.CurrentTime;
                 updateClock();
 
                 if (state == PlaybackState.NotValid)
                     break;
 
-                base.UpdateSubTree();
-                UpdateSubTreeMasking();
+                presentationIsCurrent = false;
+
+                if (hasPresented
+                    && state == PlaybackState.RequiresCatchUp
+                    && manualClock.CurrentTime == previousTime
+                    && ReplayInputHandler?.AllowSameTimeFrameBatching == true
+                    && ReplayFrameProcessor != null)
+                {
+                    ReplayFrameProcessor.ProcessReplayFrame();
+                    batchedFrames++;
+                }
+                else
+                {
+                    updatePresentation();
+                    presentationIsCurrent = true;
+                }
             } while (state == PlaybackState.RequiresCatchUp && stopwatch.ElapsedMilliseconds < max_catchup_milliseconds);
 
+            if (state != PlaybackState.NotValid && !presentationIsCurrent)
+                updatePresentation();
+
+            same_time_replay_frames.Value = batchedFrames;
+
             return true;
+        }
+
+        private void updatePresentation()
+        {
+            base.UpdateSubTree();
+            UpdateSubTreeMasking();
+            hasPresented = true;
         }
 
         private void updateClock()

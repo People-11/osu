@@ -75,7 +75,7 @@ namespace osu.Game.Rulesets.Osu.UI
             return new OsuResumeOverlay();
         }
 
-        protected override ReplayInputHandler CreateReplayInputHandler(Replay replay) => new OsuFramedReplayInputHandler(replay);
+        protected override ReplayInputHandler CreateReplayInputHandler(Replay replay) => new OsuFramedReplayInputHandler(replay, Mods.Any(m => m is ModAutoplay or ModCinema));
 
         protected override ReplayRecorder CreateReplayRecorder(Score score) => new OsuReplayRecorder(score);
 

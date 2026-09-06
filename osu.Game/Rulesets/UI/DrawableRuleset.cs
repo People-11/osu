@@ -177,6 +177,7 @@ namespace osu.Game.Rulesets.UI
             InternalChild = frameStabilityContainer = new FrameStabilityContainer(GameplayStartTime)
             {
                 FrameStablePlayback = FrameStablePlayback,
+                ReplayFrameProcessor = KeyBindingInputManager as IReplayFrameProcessor,
                 Children = new Drawable[]
                 {
                     FrameStableComponents,

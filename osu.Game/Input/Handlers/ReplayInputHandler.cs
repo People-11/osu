@@ -25,6 +25,11 @@ namespace osu.Game.Input.Handlers
         public Func<Vector2, Vector2> GamefieldToScreenSpace { protected get; set; }
 
         /// <summary>
+        /// Whether consecutive replay frames at the exact same clock time may process their input without an intervening drawable update.
+        /// </summary>
+        public virtual bool AllowSameTimeFrameBatching => false;
+
+        /// <summary>
         /// Update the current frame based on an incoming time value.
         /// There are cases where we return a "must-use" time value that is different from the input.
         /// This is to ensure accurate playback of replay data.

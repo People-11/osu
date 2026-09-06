@@ -2,6 +2,7 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
@@ -25,7 +26,7 @@ using static osu.Game.Input.Handlers.ReplayInputHandler;
 
 namespace osu.Game.Rulesets.UI
 {
-    public abstract partial class RulesetInputManager<T> : PassThroughInputManager, ICanAttachHUDPieces, IHasReplayHandler, IHasRecordingHandler
+    public abstract partial class RulesetInputManager<T> : PassThroughInputManager, ICanAttachHUDPieces, IHasReplayHandler, IHasRecordingHandler, IReplayFrameProcessor
         where T : struct
     {
         protected override bool AllowRightClickFromLongTouch => false;
@@ -105,6 +106,20 @@ namespace osu.Game.Rulesets.UI
         #region IHasReplayHandler
 
         private ReplayInputHandler? replayInputHandler;
+
+        private readonly List<IInput> replayBatchInputs = new List<IInput>();
+
+        void IReplayFrameProcessor.ProcessReplayFrame()
+        {
+            if (replayInputHandler == null)
+                return;
+
+            replayBatchInputs.Clear();
+            replayInputHandler.CollectPendingInputs(replayBatchInputs);
+
+            foreach (IInput input in replayBatchInputs)
+                input.Apply(CurrentState, this);
+        }
 
         public ReplayInputHandler? ReplayInputHandler
         {

@@ -12,9 +12,12 @@ namespace osu.Game.Rulesets.Osu.Replays
 {
     public class OsuFramedReplayInputHandler : FramedReplayInputHandler<OsuReplayFrame>
     {
-        public OsuFramedReplayInputHandler(Replay replay)
+        public override bool AllowSameTimeFrameBatching { get; }
+
+        public OsuFramedReplayInputHandler(Replay replay, bool allowSameTimeFrameBatching = false)
             : base(replay)
         {
+            AllowSameTimeFrameBatching = allowSameTimeFrameBatching;
         }
 
         protected override bool IsImportant(OsuReplayFrame frame) => frame.Actions.Any();
