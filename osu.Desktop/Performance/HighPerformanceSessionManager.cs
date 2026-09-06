@@ -35,7 +35,13 @@ namespace osu.Desktop.Performance
             Logger.Log("Starting high performance session");
 
             originalGCMode = GCSettings.LatencyMode;
-            GCSettings.LatencyMode = GCLatencyMode.LowLatency;
+
+            // EXPERIMENT: `LowLatency` disables gen2 collections entirely, and the large object heap is only
+            // ever collected as part of a gen2 collection. On long, dense maps the LOH therefore grows without
+            // bound (measured: 45 MB -> 4.8 GB over ~two minutes, with zero gen2 collections), and as it grows
+            // the gen0/1 collections get steadily more expensive until GC is ~50% of every frame.
+            // `SustainedLowLatency` still avoids blocking gen2 collections but permits background ones.
+            GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
 
             // Without doing this, the new GC mode won't kick in until the next GC, which could be at a more noticeable point in time.
             GC.Collect(0);
@@ -51,7 +57,7 @@ namespace osu.Desktop.Performance
 
             Logger.Log("Ending high performance session");
 
-            if (GCSettings.LatencyMode == GCLatencyMode.LowLatency)
+            if (GCSettings.LatencyMode == GCLatencyMode.SustainedLowLatency)
                 GCSettings.LatencyMode = originalGCMode;
 
             // No GC.Collect() as we were already collecting at a higher frequency in the old mode.
