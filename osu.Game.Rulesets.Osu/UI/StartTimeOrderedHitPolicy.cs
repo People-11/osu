@@ -21,20 +21,39 @@ namespace osu.Game.Rulesets.Osu.UI
     /// </summary>
     public class StartTimeOrderedHitPolicy : IHitPolicy
     {
-        public IHitObjectContainer? HitObjectContainer { get; set; }
+        private IHitObjectContainer? hitObjectContainer;
+
+        public IHitObjectContainer? HitObjectContainer
+        {
+            get => hitObjectContainer;
+            set
+            {
+                hitObjectContainer = value;
+                blockingObjectVersion = ulong.MaxValue;
+                clearedVersion = ulong.MaxValue;
+            }
+        }
+
+        private ulong blockingObjectVersion = ulong.MaxValue;
+        private double blockingObjectTargetTime;
+        private DrawableHitObject? blockingObject;
+
+        private ulong clearedVersion = ulong.MaxValue;
+        private double clearedTargetTime;
+
+        private DrawableHitObject? lastCheckedObject;
+        private double lastCheckedTime;
+        private HitResult lastCheckedResult;
+        private ClickAction lastCheckedAction;
 
         public ClickAction CheckHittable(DrawableHitObject hitObject, double time, HitResult result)
         {
             if (HitObjectContainer == null)
                 throw new InvalidOperationException($"{nameof(HitObjectContainer)} should be set before {nameof(CheckHittable)} is called.");
 
-            DrawableHitObject? blockingObject = null;
+            var blockingObject = getBlockingObject(hitObject.HitObject.StartTime);
 
-            foreach (var obj in enumerateHitObjectsUpTo(hitObject.HitObject.StartTime))
-            {
-                if (hitObjectCanBlockFutureHits(obj))
-                    blockingObject = obj;
-            }
+            ClickAction action;
 
             if (blockingObject != null)
             {
@@ -44,14 +63,19 @@ namespace osu.Game.Rulesets.Osu.UI
                 //
                 // Hits at exactly the same time as the blocking hitobject are allowed for maps that contain simultaneous hitobjects (e.g. /b/372245).
                 if (!blockingObject.Judged && time < blockingObject.HitObject.StartTime)
-                    return ClickAction.Shake;
+                    action = ClickAction.Shake;
+                else
+                    action = result == HitResult.None ? ClickAction.Shake : ClickAction.Hit;
             }
+            else
+                // Generally when the user has hit way too early.
+                action = result == HitResult.None ? ClickAction.Shake : ClickAction.Hit;
 
-            // Generally when the user has hit way too early.
-            if (result == HitResult.None)
-                return ClickAction.Shake;
-
-            return ClickAction.Hit;
+            lastCheckedObject = hitObject;
+            lastCheckedTime = time;
+            lastCheckedResult = result;
+            lastCheckedAction = action;
+            return action;
         }
 
         public void HandleHit(DrawableHitObject hitObject)
@@ -63,8 +87,19 @@ namespace osu.Game.Rulesets.Osu.UI
             if (!hitObjectCanBlockFutureHits(hitObject))
                 return;
 
-            if (CheckHittable(hitObject, hitObject.HitObject.StartTime + hitObject.Result.TimeOffset, hitObject.Result.Type) != ClickAction.Hit)
+            double hitTime = hitObject.HitObject.StartTime + hitObject.Result.TimeOffset;
+            bool alreadyChecked = ReferenceEquals(lastCheckedObject, hitObject)
+                                  && lastCheckedTime == hitTime
+                                  && lastCheckedResult == hitObject.Result.Type;
+
+            ClickAction action = alreadyChecked ? lastCheckedAction : CheckHittable(hitObject, hitTime, hitObject.Result.Type);
+            lastCheckedObject = null;
+
+            if (action != ClickAction.Hit)
                 throw new InvalidOperationException($"A {hitObject} was hit before it became hittable!");
+
+            if (clearedVersion == HitObjectContainer.StateVersion && clearedTargetTime == hitObject.HitObject.StartTime)
+                return;
 
             // Miss all hitobjects prior to the hit one.
             foreach (var obj in enumerateHitObjectsUpTo(hitObject.HitObject.StartTime))
@@ -75,6 +110,9 @@ namespace osu.Game.Rulesets.Osu.UI
                 if (hitObjectCanBlockFutureHits(obj))
                     ((DrawableOsuHitObject)obj).MissForcefully();
             }
+
+            clearedVersion = HitObjectContainer.StateVersion;
+            clearedTargetTime = hitObject.HitObject.StartTime;
         }
 
         /// <summary>
@@ -83,6 +121,24 @@ namespace osu.Game.Rulesets.Osu.UI
         /// <param name="hitObject">The <see cref="HitObject"/> to test.</param>
         private static bool hitObjectCanBlockFutureHits(DrawableHitObject hitObject)
             => hitObject is DrawableHitCircle;
+
+        private DrawableHitObject? getBlockingObject(double targetTime)
+        {
+            if (blockingObjectVersion == HitObjectContainer!.StateVersion && blockingObjectTargetTime == targetTime)
+                return blockingObject;
+
+            blockingObject = null;
+
+            foreach (var obj in enumerateHitObjectsUpTo(targetTime))
+            {
+                if (hitObjectCanBlockFutureHits(obj))
+                    blockingObject = obj;
+            }
+
+            blockingObjectVersion = HitObjectContainer.StateVersion;
+            blockingObjectTargetTime = targetTime;
+            return blockingObject;
+        }
 
         private IEnumerable<DrawableHitObject> enumerateHitObjectsUpTo(double targetTime)
         {

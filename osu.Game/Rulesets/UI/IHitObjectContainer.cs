@@ -20,5 +20,10 @@ namespace osu.Game.Rulesets.UI
         /// If this <see cref="IHitObjectContainer"/> uses pooled objects, this is equivalent to <see cref="Objects"/>.
         /// </remarks>
         IEnumerable<DrawableHitObject> AliveObjects { get; }
+
+        /// <summary>
+        /// Changes whenever the contents, ordering, or judgement state of <see cref="AliveObjects"/> may have been reset.
+        /// </summary>
+        ulong StateVersion { get; }
     }
 }

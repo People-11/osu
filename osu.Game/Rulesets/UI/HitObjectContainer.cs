@@ -21,7 +21,9 @@ namespace osu.Game.Rulesets.UI
     {
         public IEnumerable<DrawableHitObject> Objects => InternalChildren.Cast<DrawableHitObject>().OrderBy(h => h.HitObject.StartTime);
 
-        public IEnumerable<DrawableHitObject> AliveObjects => AliveEntries.Values.OrderBy(h => h.HitObject.StartTime);
+        public IEnumerable<DrawableHitObject> AliveObjects => aliveObjects ??= AliveEntries.Values.OrderBy(h => h.HitObject.StartTime).ToArray();
+
+        public ulong StateVersion { get; private set; }
 
         /// <summary>
         /// Invoked when a <see cref="DrawableHitObject"/> is judged.
@@ -45,6 +47,8 @@ namespace osu.Game.Rulesets.UI
         internal event Action<HitObject> HitObjectUsageFinished;
 
         private readonly Dictionary<DrawableHitObject, IBindable> startTimeMap = new Dictionary<DrawableHitObject, IBindable>();
+
+        private DrawableHitObject[] aliveObjects;
 
         private readonly Dictionary<HitObjectLifetimeEntry, DrawableHitObject> nonPooledDrawableMap = new Dictionary<HitObjectLifetimeEntry, DrawableHitObject>();
 
@@ -106,6 +110,9 @@ namespace osu.Game.Rulesets.UI
         private void addDrawable(DrawableHitObject drawable)
         {
             drawable.OnNewResult += onNewResult;
+            drawable.OnRevertResult += onRevertResult;
+            drawable.HitObject.DefaultsApplied += onDefaultsApplied;
+            invalidateAliveObjects();
 
             bindStartTime(drawable);
             AddInternal(drawable);
@@ -114,6 +121,9 @@ namespace osu.Game.Rulesets.UI
         private void removeDrawable(DrawableHitObject drawable)
         {
             drawable.OnNewResult -= onNewResult;
+            drawable.OnRevertResult -= onRevertResult;
+            drawable.HitObject.DefaultsApplied -= onDefaultsApplied;
+            invalidateAliveObjects();
 
             unbindStartTime(drawable);
 
@@ -148,6 +158,16 @@ namespace osu.Game.Rulesets.UI
 
         private void onNewResult(DrawableHitObject d, JudgementResult r) => NewResult?.Invoke(d, r);
 
+        private void onRevertResult(DrawableHitObject d, JudgementResult r) => invalidateAliveObjects();
+
+        private void onDefaultsApplied(HitObject h) => invalidateAliveObjects();
+
+        private void invalidateAliveObjects()
+        {
+            aliveObjects = null;
+            StateVersion++;
+        }
+
         #region Comparator + StartTime tracking
 
         private void bindStartTime(DrawableHitObject hitObject)
@@ -156,6 +176,8 @@ namespace osu.Game.Rulesets.UI
 
             bindable.BindValueChanged(_ =>
             {
+                invalidateAliveObjects();
+
                 if (LoadState >= LoadState.Ready)
                     SortInternal();
             });
@@ -191,6 +213,7 @@ namespace osu.Game.Rulesets.UI
         protected override void Dispose(bool isDisposing)
         {
             base.Dispose(isDisposing);
+            aliveObjects = null;
             unbindAllStartTimes();
         }
     }

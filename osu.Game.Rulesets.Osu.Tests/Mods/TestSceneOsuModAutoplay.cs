@@ -37,6 +37,26 @@ namespace osu.Game.Rulesets.Osu.Tests.Mods
         }
 
         [Test]
+        public void TestPerfectScoreOnDenseSimultaneousCircles()
+        {
+            const int circle_count = 100;
+
+            CreateModTest(new ModTestData
+            {
+                Autoplay = true,
+                CreateBeatmap = () => new Beatmap
+                {
+                    HitObjects = Enumerable.Range(0, circle_count).Select(i => (HitObject)new HitCircle
+                    {
+                        StartTime = 1000,
+                        Position = new Vector2(32 + i % 16 * 30, 42 + i / 16 * 50)
+                    }).ToList()
+                },
+                PassCondition = () => Player.ScoreProcessor.TotalScore.Value == 1_000_000
+            });
+        }
+
+        [Test]
         public void TestSpmUnaffectedByRateAdjust()
             => runSpmTest(new OsuModDaycore
             {
