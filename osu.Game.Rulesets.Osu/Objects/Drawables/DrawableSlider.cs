@@ -267,8 +267,14 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
             Ball.UpdateProgress(completionProgress);
             SliderBody?.UpdateProgress(HeadCircle.IsHit ? completionProgress : 0);
 
-            foreach (DrawableSliderRepeat repeat in repeatContainer)
-                repeat.UpdateSnakingPosition(HitObject.Path.PositionAt(SliderBody?.SnakedStart ?? 0), HitObject.Path.PositionAt(SliderBody?.SnakedEnd ?? 0));
+            if (repeatContainer.Count > 0)
+            {
+                Vector2 snakedStart = HitObject.Path.PositionAt(SliderBody?.SnakedStart ?? 0);
+                Vector2 snakedEnd = HitObject.Path.PositionAt(SliderBody?.SnakedEnd ?? 0);
+
+                foreach (DrawableSliderRepeat repeat in repeatContainer)
+                    repeat.UpdateSnakingPosition(snakedStart, snakedEnd);
+            }
 
             Size = SliderBody?.Size ?? Vector2.Zero;
             OriginPosition = SliderBody?.PathOffset ?? Vector2.Zero;
