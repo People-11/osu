@@ -2,7 +2,6 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
-using System.Linq;
 using osu.Framework.Allocation;
 using osu.Framework.Bindables;
 using osu.Framework.Graphics;
@@ -78,7 +77,16 @@ namespace osu.Game.Rulesets.Osu.Skinning.Legacy
 
             // Check whether currently in a kiai section first. This is only done as an optimisation to avoid enumerating AliveObjects when not necessary.
             if (gameplayState.Beatmap.ControlPointInfo.EffectPointAt(Time.Current).KiaiMode)
-                kiaiHitObject = playfield.HitObjectContainer.AliveObjects.FirstOrDefault(isTracking);
+            {
+                foreach (var hitObject in playfield.HitObjectContainer.AliveObjects)
+                {
+                    if (!isTracking(hitObject))
+                        continue;
+
+                    kiaiHitObject = hitObject;
+                    break;
+                }
+            }
 
             kiaiSpewer.Active.Value = kiaiHitObject != null;
         }
