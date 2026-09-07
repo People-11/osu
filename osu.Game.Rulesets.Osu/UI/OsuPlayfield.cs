@@ -2,6 +2,7 @@
 // See the LICENCE file in the repository root for full licence text.
 
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Linq;
@@ -19,6 +20,7 @@ using osu.Game.Rulesets.Osu.Configuration;
 using osu.Game.Rulesets.Osu.Objects;
 using osu.Game.Rulesets.Osu.Objects.Drawables;
 using osu.Game.Rulesets.Osu.Objects.Drawables.Connections;
+using osu.Game.Rulesets.Osu.Scoring;
 using osu.Game.Rulesets.Osu.UI.Cursor;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Rulesets.UI;
@@ -127,6 +129,7 @@ namespace osu.Game.Rulesets.Osu.UI
             var osuBeatmap = (OsuBeatmap?)beatmap;
 
             int greatJudgementPoolSize = osuBeatmap == null ? 20 : calculateGreatJudgementPoolSize(osuBeatmap);
+            int hitCirclePoolSize = osuBeatmap == null ? 20 : CalculateHitCirclePoolSize(osuBeatmap);
 
             // Dense autoplay maps can exhaust the default pool during gameplay. A replacement judgement must
             // then load its skinnable hierarchy synchronously on the update thread (20ms in the captured log).
@@ -144,7 +147,7 @@ namespace osu.Game.Rulesets.Osu.UI
                 HitResult.IgnoreMiss,
             }, onJudgementLoaded, result => result == HitResult.Great ? greatJudgementPoolSize : 20));
 
-            RegisterPool<HitCircle, DrawableHitCircle>(20, 1000);
+            RegisterPool<HitCircle, DrawableHitCircle>(hitCirclePoolSize, 1000);
 
             // handle edge cases where a beatmap has a slider with many repeats.
             int maxRepeatsOnOneSlider = 0;
@@ -188,6 +191,37 @@ namespace osu.Game.Rulesets.Osu.UI
                     first++;
 
                 peak = Math.Max(peak, last - first + 1);
+            }
+
+            return Math.Min(peak, 1000);
+        }
+
+        internal static int CalculateHitCirclePoolSize(OsuBeatmap beatmap)
+        {
+            // A circle enters the pool-backed update tree at preempt and can remain there until a late miss has
+            // completed the common 800ms hit-state tail. Preload the peak overlap so none are synchronously
+            // constructed during gameplay; end events sort before start events because LifetimeEnd is exclusive.
+            var lifetimeEvents = new List<(double time, int change)>();
+
+            foreach (var circle in beatmap.HitObjects.OfType<HitCircle>())
+            {
+                lifetimeEvents.Add((circle.StartTime - circle.TimePreempt, 1));
+                lifetimeEvents.Add((circle.StartTime + OsuHitWindows.MISS_WINDOW + 800, -1));
+            }
+
+            lifetimeEvents.Sort((a, b) =>
+            {
+                int timeComparison = a.time.CompareTo(b.time);
+                return timeComparison != 0 ? timeComparison : a.change.CompareTo(b.change);
+            });
+
+            int alive = 0;
+            int peak = 20;
+
+            foreach (var lifetimeEvent in lifetimeEvents)
+            {
+                alive += lifetimeEvent.change;
+                peak = Math.Max(peak, alive);
             }
 
             return Math.Min(peak, 1000);

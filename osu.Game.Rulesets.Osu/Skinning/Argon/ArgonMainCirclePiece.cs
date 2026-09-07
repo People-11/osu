@@ -43,7 +43,7 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
         private readonly FastCircle innerGradient;
         private readonly FastCircle innerFill;
 
-        private readonly RingPiece border;
+        private readonly FastRing border;
         private readonly OsuSpriteText number;
 
         private readonly IBindable<Color4> accentColour = new Bindable<Color4>();
@@ -105,15 +105,17 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
                     Anchor = Anchor.Centre,
                     Origin = Anchor.Centre,
                 },
-                kiaiContainer = new CircularContainer
+                kiaiContainer = new KiaiFlash
                 {
-                    Masking = true,
                     Anchor = Anchor.Centre,
                     Origin = Anchor.Centre,
                     Size = circle_size,
-                    Child = new KiaiFlash
+                    Child = new FastCircle
                     {
                         RelativeSizeAxes = Axes.Both,
+                        // Replaces the box `KiaiFlash` creates for itself, so it must start hidden as that one
+                        // does. `KiaiFlash` only ever fades this in on a kiai beat.
+                        Alpha = 0,
                     }
                 },
                 number = new OsuSpriteText
@@ -125,7 +127,13 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
                     Text = @"1",
                 },
                 flash = new FlashPiece(),
-                border = new RingPiece(BORDER_THICKNESS),
+                border = new FastRing
+                {
+                    Thickness = BORDER_THICKNESS,
+                    Size = circle_size,
+                    Anchor = Anchor.Centre,
+                    Origin = Anchor.Centre,
+                },
             };
         }
 
@@ -229,7 +237,7 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
             number.Alpha = 1;
             flash.Alpha = 0;
             border.Size = circle_size;
-            border.BorderColour = Color4.White;
+            border.Colour = Color4.White;
             kiaiContainer.Size = circle_size;
             kiaiContainer.Alpha = 1;
         }
@@ -264,7 +272,7 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
                     outerFill.Alpha = 0;
                     innerFill.Alpha = 0;
                     innerGradient.Alpha = 0;
-                    border.Size = circle_size * shrink_size + new Vector2(border.BorderThickness);
+                    border.Size = circle_size * shrink_size + new Vector2(border.Thickness);
                     kiaiContainer.Size = circle_size * shrink_size;
                     kiaiContainer.Alpha = 0;
                     outerGradient.Size = new Vector2(OUTER_GRADIENT_SIZE * shrink_size);
@@ -273,7 +281,7 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
                     flash.Alpha = hitLightingEnabled ? 1 : 0;
                 }
 
-                border.BorderColour = Interpolation.ValueAt(easedProgress(elapsed, 800, Easing.None), ColourInfo.SingleColour(Color4.White), hitBorderEndColour, 0, 1);
+                border.Colour = Interpolation.ValueAt(easedProgress(elapsed, 800, Easing.None), ColourInfo.SingleColour(Color4.White), hitBorderEndColour, 0, 1);
                 Alpha = valueAt(elapsed, 1, 0, hitLightingEnabled ? 800 : 640, Easing.OutQuad);
                 return;
             }
@@ -286,12 +294,12 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
             innerGradient.Alpha = valueAt(elapsed, 1, 0, flash_in_duration, Easing.OutQuint);
 
             float resizeProgress = easedProgress(elapsed, resize_duration, Easing.OutElasticHalf);
-            border.Size = Vector2.Lerp(circle_size, circle_size * shrink_size + new Vector2(border.BorderThickness), resizeProgress);
+            border.Size = Vector2.Lerp(circle_size, circle_size * shrink_size + new Vector2(border.Thickness), resizeProgress);
             kiaiContainer.Size = Vector2.Lerp(circle_size, circle_size * shrink_size, resizeProgress);
             kiaiContainer.Alpha = valueAt(elapsed, 1, 0, flash_in_duration, Easing.OutQuint);
 
             float borderColourProgress = easedProgress(elapsed, 800, Easing.None);
-            border.BorderColour = Interpolation.ValueAt(borderColourProgress, ColourInfo.SingleColour(Color4.White), hitBorderEndColour, 0, 1);
+            border.Colour = Interpolation.ValueAt(borderColourProgress, ColourInfo.SingleColour(Color4.White), hitBorderEndColour, 0, 1);
 
             double outerElapsed = elapsed - outer_delay;
             outerGradient.Size = new Vector2(valueAt(outerElapsed, OUTER_GRADIENT_SIZE, OUTER_GRADIENT_SIZE * shrink_size, resize_duration, Easing.OutElasticHalf));
