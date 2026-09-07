@@ -757,11 +757,11 @@ namespace osu.Game.Rulesets.Objects.Drawables
         /// <returns>Whether a scoring result has occurred from this <see cref="DrawableHitObject"/> or any nested <see cref="DrawableHitObject"/>.</returns>
         protected bool UpdateResult(bool userTriggered)
         {
-            // It's possible for input to get into a bad state when rewinding gameplay, so results should not be processed
-            if ((Clock as IGameplayClock)?.IsRewinding == true)
+            if (Judged)
                 return false;
 
-            if (Judged)
+            // It's possible for input to get into a bad state when rewinding gameplay, so results should not be processed
+            if ((Clock as IGameplayClock)?.IsRewinding == true)
                 return false;
 
             CheckForResult(userTriggered, Time.Current - HitObject.GetEndTime());
