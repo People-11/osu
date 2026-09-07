@@ -60,6 +60,10 @@ namespace osu.Game.Rulesets.UI
             RelativeSizeAxes = Axes.Both;
         }
 
+        // Entry lifetime changes are the sole source of child lifetime changes in gameplay. The pooled lifetime
+        // manager has already evaluated every active entry, so a second full scan is redundant on stable frames.
+        protected override bool RequiresContinuousChildLifeChecks => false;
+
         protected override void LoadAsyncComplete()
         {
             base.LoadAsyncComplete();

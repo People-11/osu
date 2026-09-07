@@ -60,6 +60,16 @@ namespace osu.Game.Rulesets.Objects.Pooling
 
         private readonly LifetimeEntryManager lifetimeManager = new LifetimeEntryManager();
 
+        /// <summary>
+        /// Whether the generic child lifetime scan is required even when the managed lifetime set did not change.
+        /// </summary>
+        /// <remarks>
+        /// Containers whose children are exclusively controlled by the lifetime manager may override this to avoid
+        /// scanning the same alive drawables a second time every frame. A scan still runs whenever entries cross a
+        /// boundary or the internal/alive child counts differ, preserving loading and seek behaviour.
+        /// </remarks>
+        protected virtual bool RequiresContinuousChildLifeChecks => true;
+
         protected PooledDrawableWithLifetimeContainer()
         {
             lifetimeManager.EntryBecameAlive += entryBecameAlive;
@@ -161,7 +171,10 @@ namespace osu.Game.Rulesets.Objects.Pooling
                 return false;
 
             bool aliveChanged = lifetimeManager.Update(Time.Current - PastLifetimeExtension, Time.Current + FutureLifetimeExtension);
-            aliveChanged |= base.CheckChildrenLife();
+
+            if (RequiresContinuousChildLifeChecks || aliveChanged || InternalChildren.Count != AliveInternalChildren.Count)
+                aliveChanged |= base.CheckChildrenLife();
+
             return aliveChanged;
         }
     }

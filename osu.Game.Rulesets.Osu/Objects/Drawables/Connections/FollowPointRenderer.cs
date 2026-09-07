@@ -19,6 +19,8 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
     /// </summary>
     public partial class FollowPointRenderer : PooledDrawableWithLifetimeContainer<FollowPointLifetimeEntry, FollowPointConnection>
     {
+        protected override bool RequiresContinuousChildLifeChecks => false;
+
         public new IReadOnlyList<FollowPointLifetimeEntry> Entries => lifetimeEntries;
 
         private DrawablePool<FollowPointConnection> connectionPool;
