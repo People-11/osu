@@ -409,8 +409,11 @@ namespace osu.Game.Rulesets.Scoring
 
             ScoreRank newRank = RankFromScore(Accuracy.Value, ScoreResultCounts);
 
-            foreach (var mod in Mods.Value.OfType<IApplicableToScoreProcessor>())
-                newRank = mod.AdjustRank(newRank, Accuracy.Value);
+            foreach (var mod in Mods.Value)
+            {
+                if (mod is IApplicableToScoreProcessor applicableMod)
+                    newRank = applicableMod.AdjustRank(newRank, Accuracy.Value);
+            }
 
             rank.Value = newRank;
         }
