@@ -74,6 +74,8 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables.Connections
         // traversing into it every frame cannot change anything. Custom/animated skin components keep the full path.
         protected override bool RequiresChildrenUpdate => Drawable is not ArgonFollowPoint { LoadState: LoadState.Loaded } && base.RequiresChildrenUpdate;
 
+        protected override bool CheckChildrenLife() => Drawable is not ArgonFollowPoint { IsAlive: true } && base.CheckChildrenLife();
+
         /// <summary>
         /// Applies the complete follow-point animation from absolute times. This avoids maintaining separate alpha,
         /// scale and position transform tracks for every visible follow point.

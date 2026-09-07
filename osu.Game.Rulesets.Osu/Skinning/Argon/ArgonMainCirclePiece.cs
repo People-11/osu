@@ -209,6 +209,8 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
 
         protected override bool RequiresChildrenUpdate => requireFullChildUpdate && base.RequiresChildrenUpdate;
 
+        protected override bool CheckChildrenLife() => requireFullChildUpdate && base.CheckChildrenLife();
+
         public override bool UpdateSubTree()
         {
             if (hitAnimationApplied)

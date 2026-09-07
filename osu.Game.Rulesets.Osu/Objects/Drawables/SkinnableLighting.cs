@@ -30,6 +30,8 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 
         protected override bool RequiresChildrenUpdate => !childReady && base.RequiresChildrenUpdate;
 
+        protected override bool CheckChildrenLife() => !childReady && base.CheckChildrenLife();
+
         protected override void UpdateAfterChildren()
         {
             base.UpdateAfterChildren();

@@ -100,6 +100,8 @@ namespace osu.Game.Rulesets.Osu.Skinning.Argon
 
         protected override bool RequiresChildrenUpdate => requireFullChildUpdate && base.RequiresChildrenUpdate;
 
+        protected override bool CheckChildrenLife() => requireFullChildUpdate && base.CheckChildrenLife();
+
         protected override void UpdateAfterChildren()
         {
             base.UpdateAfterChildren();
