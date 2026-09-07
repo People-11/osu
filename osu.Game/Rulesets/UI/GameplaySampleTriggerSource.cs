@@ -157,7 +157,10 @@ namespace osu.Game.Rulesets.UI
 
             // Else we want the earliest valid nested.
             // In cases of nested objects, they will always have earlier sample data than their parent object.
-            return getAllNested(mostValidObject.HitObject).OrderBy(h => h.GetEndTime()).SkipWhile(h => h.GetEndTime() <= getReferenceTime()).FirstOrDefault() ?? mostValidObject.HitObject;
+            HitObject? nextNested = null;
+            double nextNestedEndTime = double.MaxValue;
+            findNextNested(mostValidObject.HitObject, getReferenceTime(), ref nextNested, ref nextNestedEndTime);
+            return nextNested ?? mostValidObject.HitObject;
         }
 
         private bool isAlreadyHit(HitObjectLifetimeEntry h) => h.AllJudged;
@@ -165,14 +168,19 @@ namespace osu.Game.Rulesets.UI
 
         private double getReferenceTime() => gameplayClock?.CurrentTime ?? Clock.CurrentTime;
 
-        private IEnumerable<HitObject> getAllNested(HitObject hitObject)
+        private static void findNextNested(HitObject hitObject, double referenceTime, ref HitObject? next, ref double nextEndTime)
         {
             foreach (var h in hitObject.NestedHitObjects)
             {
-                yield return h;
+                double endTime = h.GetEndTime();
 
-                foreach (var n in getAllNested(h))
-                    yield return n;
+                if (endTime > referenceTime && endTime < nextEndTime)
+                {
+                    next = h;
+                    nextEndTime = endTime;
+                }
+
+                findNextNested(h, referenceTime, ref next, ref nextEndTime);
             }
         }
 
