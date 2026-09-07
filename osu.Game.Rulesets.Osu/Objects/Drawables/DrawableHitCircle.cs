@@ -39,8 +39,9 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 
         Drawable IHasApproachCircle.ApproachCircle => ApproachCircle;
 
-        private Container scaleContainer = null!;
-        private ShakeContainer shakeContainer = null!;
+        // Doubles as the shake container. `HitReceptor` sits outside it (it must not shake), and is scaled
+        // directly instead - one less composite per hit circle, which is worth having thousands at a time.
+        private ShakeContainer scaleContainer = null!;
 
         public DrawableHitCircle()
             : this(null)
@@ -63,38 +64,31 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 
             AddRangeInternal(new Drawable[]
             {
-                scaleContainer = new Container
+                HitArea = new HitReceptor
                 {
+                    CanBeHit = () => !AllJudged,
+                    Hit = () => UpdateResult(true)
+                },
+                scaleContainer = new ShakeContainer
+                {
+                    ShakeDuration = 30,
                     RelativeSizeAxes = Axes.Both,
                     Origin = Anchor.Centre,
                     Anchor = Anchor.Centre,
                     Children = new Drawable[]
                     {
-                        HitArea = new HitReceptor
+                        CirclePiece = new SkinnableDrawable(new OsuSkinComponentLookup(CirclePieceComponent), _ => new MainCirclePiece())
                         {
-                            CanBeHit = () => !AllJudged,
-                            Hit = () => UpdateResult(true)
+                            Anchor = Anchor.Centre,
+                            Origin = Anchor.Centre,
                         },
-                        shakeContainer = new ShakeContainer
+                        ApproachCircle = new ProxyableSkinnableDrawable(new OsuSkinComponentLookup(OsuSkinComponents.ApproachCircle), _ => new DefaultApproachCircle())
                         {
-                            ShakeDuration = 30,
+                            Anchor = Anchor.Centre,
+                            Origin = Anchor.Centre,
                             RelativeSizeAxes = Axes.Both,
-                            Children = new Drawable[]
-                            {
-                                CirclePiece = new SkinnableDrawable(new OsuSkinComponentLookup(CirclePieceComponent), _ => new MainCirclePiece())
-                                {
-                                    Anchor = Anchor.Centre,
-                                    Origin = Anchor.Centre,
-                                },
-                                ApproachCircle = new ProxyableSkinnableDrawable(new OsuSkinComponentLookup(OsuSkinComponents.ApproachCircle), _ => new DefaultApproachCircle())
-                                {
-                                    Anchor = Anchor.Centre,
-                                    Origin = Anchor.Centre,
-                                    RelativeSizeAxes = Axes.Both,
-                                    Alpha = 0,
-                                    Scale = new Vector2(4),
-                                }
-                            }
+                            Alpha = 0,
+                            Scale = new Vector2(4),
                         }
                     }
                 },
@@ -104,7 +98,13 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
 
             PositionBindable.BindValueChanged(_ => UpdatePosition());
             StackHeightBindable.BindValueChanged(_ => UpdatePosition());
-            ScaleBindable.BindValueChanged(scale => scaleContainer.Scale = new Vector2(scale.NewValue));
+            ScaleBindable.BindValueChanged(scale =>
+            {
+                var scaleVector = new Vector2(scale.NewValue);
+
+                scaleContainer.Scale = scaleVector;
+                HitArea.Scale = scaleVector;
+            });
         }
 
         public override double LifetimeStart
@@ -132,7 +132,7 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
             Position = HitObject.StackedPosition;
         }
 
-        public override void Shake() => shakeContainer.Shake();
+        public override void Shake() => scaleContainer.Shake();
 
         protected override void CheckForResult(bool userTriggered, double timeOffset)
         {
