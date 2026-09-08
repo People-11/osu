@@ -21,6 +21,7 @@ using osu.Game.Rulesets.Osu.Objects;
 using osu.Game.Rulesets.Osu.Objects.Drawables;
 using osu.Game.Rulesets.Osu.Objects.Drawables.Connections;
 using osu.Game.Rulesets.Osu.Scoring;
+using osu.Game.Rulesets.Osu.Skinning.Argon;
 using osu.Game.Rulesets.Osu.UI.Cursor;
 using osu.Game.Rulesets.Scoring;
 using osu.Game.Rulesets.UI;
@@ -45,6 +46,26 @@ namespace osu.Game.Rulesets.Osu.UI
 
         protected override bool CanUpdateChildOnWorkerThread(Drawable child) =>
             Environment.ProcessorCount > 1 && child == FollowPoints && FollowPoints.AliveEntries.Count >= 128;
+
+        protected override HitObjectContainer CreateHitObjectContainer() => new ConcurrentHitObjectContainer();
+
+        private sealed partial class ConcurrentHitObjectContainer : HitObjectContainer
+        {
+            protected override bool BatchWorkerThreadChildUpdates => Environment.ProcessorCount > 1;
+
+            protected override int MinimumWorkerThreadChildCount => 64;
+
+            protected override int MaximumConcurrentChildUpdateThreads => Math.Min(4, Environment.ProcessorCount);
+
+            protected override bool CanUpdateChildOnWorkerThread(Drawable child)
+            {
+                // Judgement rewinds are applied by Playfield.Update() before this container is traversed. Restrict
+                // the worker to completed standalone circles so input, result calculation and sliders stay serial.
+                return child.GetType() == typeof(DrawableHitCircle)
+                       && ((DrawableHitCircle)child).IsWorkerThreadUpdateSafe
+                       && ((DrawableHitCircle)child).CirclePiece.Drawable is ArgonMainCirclePiece;
+            }
+        }
 
         public SmokeContainer Smoke { get; }
         public FollowPointRenderer FollowPoints { get; }

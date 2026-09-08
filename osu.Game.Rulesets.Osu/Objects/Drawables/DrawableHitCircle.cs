@@ -35,6 +35,8 @@ namespace osu.Game.Rulesets.Osu.Objects.Drawables
         public HitReceptor HitArea { get; private set; } = null!;
         public SkinnableDrawable CirclePiece { get; private set; } = null!;
 
+        internal bool IsWorkerThreadUpdateSafe => AllJudged && SamplesLoaded;
+
         protected override IEnumerable<Drawable> DimmablePieces => new[] { CirclePiece };
 
         Drawable IHasApproachCircle.ApproachCircle => ApproachCircle;

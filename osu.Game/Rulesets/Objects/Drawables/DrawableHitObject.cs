@@ -63,6 +63,8 @@ namespace osu.Game.Rulesets.Objects.Drawables
 
         private bool samplesLoaded;
 
+        protected bool SamplesLoaded => samplesLoaded;
+
         public virtual IEnumerable<HitSampleInfo> GetSamples() => HitObject.Samples;
 
         private readonly List<DrawableHitObject> nestedHitObjects = new List<DrawableHitObject>();
