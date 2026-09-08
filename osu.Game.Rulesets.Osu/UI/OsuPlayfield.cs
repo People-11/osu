@@ -43,6 +43,9 @@ namespace osu.Game.Rulesets.Osu.UI
         // Skipping masking calculations improves performance in intense beatmaps (ie. https://osu.ppy.sh/beatmapsets/150945#osu/372245)
         public override bool UpdateSubTreeMasking() => false;
 
+        protected override bool CanUpdateChildOnWorkerThread(Drawable child) =>
+            Environment.ProcessorCount > 1 && child == FollowPoints && FollowPoints.AliveEntries.Count >= 128;
+
         public SmokeContainer Smoke { get; }
         public FollowPointRenderer FollowPoints { get; }
 
